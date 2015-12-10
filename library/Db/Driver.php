@@ -12,11 +12,48 @@
 namespace Db;
 use PDO;
 
+/**
+ *  数据库驱动类
+ *  PDO 操作数据库方法fetch()
+ *  语法 PDOStatement->fetch(int mode)
+ *  mode 参数可取值如下：
+ *  PDO::FETCH_ASSOC	关联索引（字段名）数组形式
+ *  PDO::FETCH_NUM	数字索引数组形式
+ *  PDO::FETCH_BOTH	默认，关联及数字索引数组形式都有
+ *  PDO::FETCH_OBJ	按照对象的形式
+ *  PDO::FETCH_BOUND	通过 bindColumn() 方法将列的值赋到变量上
+ *  PDO::FETCH_CLASS	以类的形式返回结果集，如果指定的类属性不存在，会自动创建
+ *  PDO::FETCH_INTO	将数据合并入一个存在的类中进行返回
+ *  PDO::FETCH_LAZY	 结合了 PDO::FETCH_BOTH、PDO::FETCH_OBJ，在它们被调用时创建对象变量
+ *  PDO 操作数据库方法fetchAll()
+ *  语法 PDOStatement->fetchAll(int mode,int column_index)
+ *  mode 为可选参数，表示希望返回的数组，column_index 表示列索引序号，当 mode 取值 PDO::FETCH_COLUMN 时指定
+ *  mode 参数可取值如下：
+ *  PDO::FETCH_COLUMN	指定返回返回结果集中的某一列，具体列索引由 column_index 参数指定
+ *  PDO::FETCH_UNIQUE	以首个键值下表，后面数字下表的形式返回结果集
+ *  PDO::FETCH_GROUP	按指定列的值分组
+ *  PDO quote方法 为字符串添加单引号
+ *  语法 PDOStatement->quote(string str)
+ */
 abstract class Driver {
+    // PDO操作实例
+    protected $PDOStatement = null;
 	// 数据库连接ID 支持多个连接
     protected $linkID     = array();
     // 当前连接ID
     protected $_linkID    = null;
+    // 最后插入ID
+    protected $lastInsID  = null;
+    // 当前SQL指令
+    protected $queryStr   = '';
+    // 错误信息
+    protected $error      = '';
+    // 查询次数
+    protected $queryTimes   =   0;
+    // 执行次数
+    protected $executeTimes =   0;
+    // 返回或者影响记录数
+    protected $numRows    = 0;
     // 数据库连接参数配置
     protected $config     = array();
     // PDO连接参数
@@ -26,6 +63,8 @@ abstract class Driver {
         PDO::ATTR_ORACLE_NULLS      =>  PDO::NULL_NATURAL,
         PDO::ATTR_STRINGIFY_FETCHES =>  false,
     );
+    // 参数绑定
+    protected $bind         =   array();
     /**
      * 读取数据库配置信息
      * @param array $config 数据库配置数组
@@ -92,18 +131,116 @@ abstract class Driver {
     public function close() {
         $this->_linkID = null;
     }
-
+    /*
+     * 执行语句(插入或更新)
+     * @access public
+     * @param string $str sql指令
+     * @return mixed
+     */
+    public function exec($str){
+        return $this->execute($str);
+    }
+    /**
+     * 执行查询 返回单列数据
+     * @access public
+     * @param string $str  sql指令
+     * @return mixed
+     */
+    public function getOne($str) {
+        if($this->query($str)){
+            $query_result = $this->getOneResult();
+        }
+        return $query_result;
+    }
+    /**
+     * 执行查询 返回单行数据
+     * @access public
+     * @param string $str  sql指令
+     * @return mixed
+     */
+    public function getRow($str) {
+        if($this->query($str)){
+            $query_result = $this->getRowResult();
+        }
+        return $query_result;
+    }
     /**
      * 执行查询 返回数据集
      * @access public
      * @param string $str  sql指令
+     * @return mixed
+     */
+    public function getAll($str) {
+        if($this->query($str)){
+             $query_result = $this->getAllResult();
+        }
+        return $query_result;
+    }
+    /**
+     * 执行插入 返回主键id
+     * @access public
+     * @param mixed $data
+     * @param array $options 参数表达式
+     * @return false | integer
+     */
+    public function insert($data,$options=array()) {
+        //操作的数据库表
+        $table = $options['table'];
+        //数据值数组
+        $values = array();
+        //字段名数组
+        $fields = array();
+        foreach ($data as $key => $val) {
+            if(is_null($val)){
+                $values[] = 'NULL';
+            }
+            //字符串添加单引号
+            $values[] = $this->_linkID->quote($val);
+            $fields[] = $key;
+        }
+        if($this->execute('INSERT INTO '.$table.' ('.implode(',',$fields).') VALUES ('.implode($values,',').')')){
+            return $this->lastInsID;
+        };
+        return false;
+    }
+    /**
+     * 执行更新
+     * @access public
+     * @param mixed $data
+     * @param array $options 参数表达式
+     * @return bool
+     */
+    public function update($data,$options=array()) {
+        //操作的数据库表
+        $table = $options['table'];
+        //数据值数组
+        $values = array();
+        //字段名数组
+        $fields = array();
+        foreach ($data as $key => $val) {
+            if(is_null($val)){
+                $values[] = 'NULL';
+            }
+            //字符串添加单引号
+            $values[] = $this->_linkID->quote($val);
+            $fields[] = $key;
+        }
+        if($this->execute('UPDATE '.$table.' ('.implode(',',$fields).') VALUES ('.implode($values,',').')')){
+            return $this->lastInsID;
+        };
+        return false;
+    }
+    /**
+     * 执行查询 返回数据集
+     * @access private
+     * @param string $str  sql指令
      * @param boolean $fetchSql  不执行只是获取SQL
      * @return mixed
      */
-    public function query($str,$fetchSql=false) {
-        $this->initConnect(false);
+    private function query($str,$fetchSql=false) {
+        $this->startConnect(false);
         if ( !$this->_linkID ) return false;
-        $this->queryStr     =   $str;
+        $this->queryStr = $str;
         if(!empty($this->bind)){
             $that   =   $this;
             $this->queryStr =   strtr($this->queryStr,array_map(function($val) use($that){ return '\''.$that->escapeString($val).'\''; },$this->bind));
@@ -114,12 +251,9 @@ abstract class Driver {
         //释放前次的查询结果
         if ( !empty($this->PDOStatement) ) $this->free();
         $this->queryTimes++;
-        N('db_query',1); // 兼容代码
-        // 调试开始
-        $this->debug(true);
         $this->PDOStatement = $this->_linkID->prepare($str);
         if(false === $this->PDOStatement)
-            E($this->error());
+            $this->error();
         foreach ($this->bind as $key => $val) {
             if(is_array($val)){
                 $this->PDOStatement->bindValue($key, $val[0], $val[1]);
@@ -127,16 +261,134 @@ abstract class Driver {
                 $this->PDOStatement->bindValue($key, $val);
             }
         }
-        $this->bind =   array();
-        $result =   $this->PDOStatement->execute();
-        // 调试结束
-        $this->debug(false);
-        if ( false === $result ) {
+        $this->bind = array();
+        try{
+            $result = $this->PDOStatement->execute();
+            if ( false === $result ) {
+                $this->error();
+                return false;
+            } else {
+                return true;
+            }
+        }catch (\PDOException $e) {
             $this->error();
             return false;
-        } else {
-            return $this->getResult();
         }
+    }
+    /**
+     * 执行语句
+     * @access private
+     * @param string $str  sql指令
+     * @param boolean $fetchSql  不执行只是获取SQL
+     * @return mixed
+     */
+    private function execute($str,$fetchSql=false) {
+        $this->startConnect(true);
+        if ( !$this->_linkID ) return false;
+        $this->queryStr = $str;
+        if(!empty($this->bind)){
+            $that   =   $this;
+            $this->queryStr = strtr($this->queryStr,array_map(function($val) use($that){ return '\''.$that->escapeString($val).'\''; },$this->bind));
+        }
+        if($fetchSql){
+            return $this->queryStr;
+        }
+        //释放前次的查询结果
+        if ( !empty($this->PDOStatement) ) $this->free();
+        $this->executeTimes++;
+        $this->PDOStatement =   $this->_linkID->prepare($str);
+        if(false === $this->PDOStatement) {
+            $this->error();
+            return false;
+        }
+        foreach ($this->bind as $key => $val) {
+            if(is_array($val)){
+                $this->PDOStatement->bindValue($key, $val[0], $val[1]);
+            }else{
+                $this->PDOStatement->bindValue($key, $val);
+            }
+        }
+        $this->bind = array();
+        try{
+            $result = $this->PDOStatement->execute();
+            if ( false === $result) {
+                $this->error();
+                return false;
+            } else {
+                $this->numRows = $this->PDOStatement->rowCount();
+                if(preg_match("/^\s*(INSERT\s+INTO|REPLACE\s+INTO)\s+/i", $str)) {
+                    //获取最近插入语句返回的主键id
+                    $this->lastInsID = $this->_linkID->lastInsertId();
+                    //插入返回主键id
+                    return $this->lastInsID;
+                }
+                return $this->numRows;
+            }
+        }catch (\PDOException $e) {
+            $this->error();
+            return false;
+        }
+    }
+    /**
+     * 释放查询结果
+     * @access public
+     */
+    public function free() {
+        $this->PDOStatement = null;
+    }
+    /**
+     * SQL指令安全过滤
+     * @access public
+     * @param string $str  SQL字符串
+     * @return string
+     */
+    public function escapeString($str) {
+        return addslashes($str);
+    }
+    /**
+     * 获得所有的查询数据
+     * @access private
+     * @return mix
+     */
+    private function getOneResult() {
+        //返回单列数据
+        $result = $this->PDOStatement->fetch(PDO::FETCH_COLUMN);
+        return $result;
+    }
+    private function getRowResult() {
+        //返回单行数据
+        $result = $this->PDOStatement->fetch(PDO::FETCH_ASSOC);
+        return $result;
+    }
+    /**
+     * 获得所有的查询数据
+     * @access private
+     * @return array
+     */
+    private function getAllResult() {
+        //返回数据集
+        $result =   $this->PDOStatement->fetchAll(PDO::FETCH_ASSOC);
+        $this->numRows = count( $result );
+        return $result;
+    }
+    /**
+     * 数据库错误信息
+     * 并显示当前的SQL语句
+     * @access public
+     * @return string
+     */
+    public function error() {
+        if($this->PDOStatement) {
+            $error = $this->PDOStatement->errorInfo();
+            $this->error = $error[1].':'.$error[2];
+        }else{
+            $this->error = '';
+        }
+        if('' != $this->queryStr){
+            $this->error .= "\n [ SQL语句 ] : ".$this->queryStr;
+        }
+        // 记录错误日志
+        exit($this->error);
     }
    /**
      * 析构方法
