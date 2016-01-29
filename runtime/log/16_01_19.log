@@ -1,0 +1,15 @@
+[ 2016-01-19T09:36:32+08:00 ] 127.0.0.1 /yaf/
+ERR: test log
+[ 2016-01-19T09:37:43+08:00 ] 127.0.0.1 /yaf/
+ERR: sql error
+[ 2016-01-19T09:38:43+08:00 ] 127.0.0.1 /yaf/
+ERR: sql error
+[ 2016-01-19T09:51:59+08:00 ] 127.0.0.1 /yaf/
+ERR: 1064:You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'user_id = 2' at line 1
+ [ SQL语句 ] : SELECT user_id,username FROM shop_user WHEE user_id = 2
+[ 2016-01-19T09:54:51+08:00 ] 127.0.0.1 /yaf/
+SQL: 1064:You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'user_id = 2' at line 1
+ [ SQL语句 ] : SELECT user_id,username FROM shop_user WHEE user_id = 2
+[ 2016-01-19T09:55:26+08:00 ] 127.0.0.1 /yaf/
+SQL: 1064:You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'user_id = 2' at line 1
+ [ SQL语句 ] : SELECT user_id,username FROM shop_user WHEE user_id = 2

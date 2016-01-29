@@ -47,7 +47,7 @@ abstract class Driver {
     // 当前SQL指令
     protected $queryStr   = '';
     // 错误信息
-    protected $error      = '';
+    public $error      = '';
     // 查询次数
     protected $queryTimes   =   0;
     // 执行次数
@@ -85,7 +85,7 @@ abstract class Driver {
      * 连接数据库方法
      * author huangbin
      */
-    public function connect($config = '',$link_Num=0){
+    public function connect($config = '',$link_Num=0,$autoConnection=false){
         if ( !isset($this->linkID[$link_Num]) ) {
             if(empty($config)) $config = $this->config;
             try{
@@ -98,12 +98,16 @@ abstract class Driver {
                 }
                 $this->linkID[$link_Num] = new PDO( $config['dsn'], $config['user'], $config['password'],$this->pdo_options);
             }catch (\PDOException $e) {
-                // if($autoConnection){
-                //     trace($e->getMessage(),'','ERR');
-                //     return $this->connect($autoConnection,$linkNum);
-                // }elseif($config['debug']){
-                //     E($e->getMessage());
-                // }
+                if($autoConnection){
+                    //trace($e->getMessage(),'','ERR');
+                    return $this->connect($autoConnection,$link_Num);
+                }elseif($config['debug']){
+                    //E($e->getMessage());
+                    $this->error();
+                }
+                else{
+                    $this->error();
+                }
             }
         }
         return $this->linkID[$link_Num];    	
@@ -116,14 +120,74 @@ abstract class Driver {
      * @return void
      */
     protected function startConnect($master=true) {
-        if(!empty($this->config['deploy']))
+        if(!empty($this->config['deploy_type'])){
             // 采用分布式数据库
             $this->_linkID = $this->multiConnect($master);
-        else
+        }
+        else{
             // 默认单数据库
             if ( !$this->_linkID ) $this->_linkID = $this->connect();
+        }
     }
+    /**
+     * 连接分布式服务器
+     * @access protected
+     * @param boolean $master 主服务器
+     * @return void
+     */
+    protected function multiConnect($master=false) {
+        // 分布式数据库配置解析
+        $_config['username']    =   explode('|',$this->config['user']);
+        $_config['password']    =   explode('|',$this->config['password']);
+        $_config['hostname']    =   explode('|',$this->config['server']);
+        $_config['hostport']    =   explode('|',$this->config['port']);
+        $_config['database']    =   explode('|',$this->config['database']);
+        $_config['dsn']         =   explode('|',$this->config['dsn']);
+        $_config['charset']     =   explode('|',$this->config['charset']);
 
+        $m     =   floor(mt_rand(0,$this->config['master_num']-1));
+        // 数据库读写是否分离
+        if($this->config['rw_separate']){
+            // 主从式采用读写分离
+            if($master){
+                // 主服务器写入
+                $r  =   $m;
+            }
+            else{
+                if(is_numeric($this->config['slave_no'])) {// 指定服务器读
+                    $r = $this->config['slave_no'];
+                }else{
+                    // 读操作连接从服务器
+                    $r = floor(mt_rand($this->config['master_num'],count($_config['hostname'])-1));   // 每次随机连接的数据库
+                }
+            }
+        }else{
+            // 读写操作不区分服务器
+            $r = floor(mt_rand(0,count($_config['hostname'])-1));   // 每次随机连接的数据库
+        }
+        
+        if($m != $r ){
+            $db_master  =   array(
+                'username'  =>  isset($_config['username'][$m])?$_config['username'][$m]:$_config['username'][0],
+                'password'  =>  isset($_config['password'][$m])?$_config['password'][$m]:$_config['password'][0],
+                'hostname'  =>  isset($_config['hostname'][$m])?$_config['hostname'][$m]:$_config['hostname'][0],
+                'hostport'  =>  isset($_config['hostport'][$m])?$_config['hostport'][$m]:$_config['hostport'][0],
+                'database'  =>  isset($_config['database'][$m])?$_config['database'][$m]:$_config['database'][0],
+                'dsn'       =>  isset($_config['dsn'][$m])?$_config['dsn'][$m]:$_config['dsn'][0],
+                'charset'   =>  isset($_config['charset'][$m])?$_config['charset'][$m]:$_config['charset'][0],
+            );
+        }
+        $db_config = array(
+            'user'  =>  isset($_config['username'][$r])?$_config['username'][$r]:$_config['username'][0],
+            'password'  =>  isset($_config['password'][$r])?$_config['password'][$r]:$_config['password'][0],
+            'server'  =>  isset($_config['hostname'][$r])?$_config['hostname'][$r]:$_config['hostname'][0],
+            'port'  =>  isset($_config['hostport'][$r])?$_config['hostport'][$r]:$_config['hostport'][0],
+            'database'  =>  isset($_config['database'][$r])?$_config['database'][$r]:$_config['database'][0],
+            'dsn'       =>  isset($_config['dsn'][$r])?$_config['dsn'][$r]:$_config['dsn'][0],
+            'charset'   =>  isset($_config['charset'][$r])?$_config['charset'][$r]:$_config['charset'][0],
+        );
+        return $this->connect($db_config,$r,$r == $m ? false : $db_master);
+    }
     /**
      * 关闭数据库
      * @access public
@@ -131,7 +195,7 @@ abstract class Driver {
     public function close() {
         $this->_linkID = null;
     }
-    /*
+    /**
      * 执行语句(插入或更新)
      * @access public
      * @param string $str sql指令
@@ -388,7 +452,7 @@ abstract class Driver {
             $this->error .= "\n [ SQL语句 ] : ".$this->queryStr;
         }
         // 记录错误日志
-        exit($this->error);
+        //exit($this->error);
     }
    /**
      * 析构方法

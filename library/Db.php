@@ -34,7 +34,7 @@ class Db {
             if('mysqli' == $config[$id_server]['type']) $config[$id_server]['type']   =   'mysql';
             // 如果采用lite方式 仅支持原生SQL 包括query和execute方法
             $class  = ucwords(strtolower($config[$id_server]['type']));
-            include_once(dirname(__FILE__) . '/Db/Driver/' . $class . '.php');
+            Yaf_Loader::import(dirname(__FILE__) . '/Db/Driver/' . $class . '.php');
             // if(file_exists($class.'.php')){
                 self::$instance[$md5] = new $class($config[$id_server]);
             //}

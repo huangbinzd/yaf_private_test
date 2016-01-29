@@ -5,5 +5,12 @@
  </head>
  <body>
   <?php echo $content;?>
+    <div>
+        <form enctype='multipart/form-data' action="./index.php/product/upload" method="post">
+            <input type="file" name="file">
+            <input type="submit" value="提交">
+        </form>
+        <a href="./index.php?c=index&a=test">法师大幅</a>
+    </div>
  </body>
 </html>
